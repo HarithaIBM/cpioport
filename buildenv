@@ -1,6 +1,6 @@
 # Update bump details accordingly. Use bump check to confirm.
 # bump: cpio-version /CPIO_VERSION="(.*)"/ https://ftp.gnu.org/gnu/cpio/cpio-2.15.tar.gz|semver:*
-# CPIO_VERSION="V.R.M" # Specify a stable release
+CPIO_VERSION="2.15" # Specify a stable release
 # export ZOPEN_STABLE_TAG="v${CPIO_VERSION}"
 
 ###
@@ -15,7 +15,7 @@
 export ZOPEN_BUILD_LINE="STABLE"
 
 ## Required IF ZOPEN_BUILD_LINE='STABLE'
-export ZOPEN_STABLE_URL="https://ftp.gnu.org/gnu/cpio/cpio-2.15.tar.gz"  # Specify the stable build URL (either git or tarball)
+export ZOPEN_STABLE_URL="https://ftp.gnu.org/gnu/cpio/cpio-${CPIO_VERSION}.tar.gz"  # Specify the stable build URL (either git or tarball)
 export ZOPEN_STABLE_DEPS="make zoslib grep sed automake autoconf" # Specify the stable build dependencies.
 
 ## Required IF ZOPEN_BUILD_LINE='DEV'
@@ -55,21 +55,33 @@ zopen_check_results()
   dir="$1"
   pfx="$2"
   chk="$1/$2_check.log"
+  failures=$(grep -oP '\K[0-9]+(?= failed unexpectedly)' "$chk")
+  skipped=$(grep -oP '\K[0-9]+(?= test was skipped|tests were skipped)' "$chk")
+
+  tests_run=$(grep -oP 'ERROR: \K[0-9]+(?= tests were run)' "$chk")
+
+  # Default values to 0 if variables are empty (in case grep doesn't find matches)
+  failures=${failures:-0}
+  skipped=${skipped:-0}
+  tests_run=${tests_run:-0}
+
+  # Calculate passed
+  passed=$((tests_run - failures - skipped))
+
+  totalTests=$(($failures+$skipped+$passed))
 
   # Echo the following information to gauge build health
-  echo "actualFailures:0"
-  echo "totalTests:1"
-  echo "expectedFailures:0"
-  echo "expectedTotalTests:1"
+cat <<ZZ
+actualFailures:${failures}
+totalTests:${totalTests}
+expectedFailures:3
+ZZ
 }
 
 zopen_get_version()
 {
-  # Modify to echo the version of your tool/library
-  # Rather than hardcoding the version, obtain the version by running the tool/library
-  echo "1.0.0"
+  ./src/cpio --version | head -n1 | cut -d' ' -f4
 }
-
 
 ###
 ### Optional user-supplied functions for zopen-build
