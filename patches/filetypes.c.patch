@@ -1,0 +1,88 @@
+diff --git a/src/filetypes.h b/src/filetypes.h
+index e105ed0..2045054 100644
+--- a/src/filetypes.h
++++ b/src/filetypes.h
+@@ -51,6 +51,7 @@
+ /* Define the file type bits used in cpio archives.
+    They have the same values as the S_IF bits in traditional Unix.  */
+ 
++#ifndef __MVS__
+ #define CP_IFMT 0170000		/* Mask for all file type bits.  */
+ 
+ #if defined(S_ISBLK)
+@@ -77,6 +78,75 @@
+ #if defined(S_ISNWK)
+ # define CP_IFNWK 0110000
+ #endif
++#endif
++#ifdef __MVS__   /* z/OS */
++
++#  define LINUX_S_IFIFO       0010000   /* [XSI] named pipe (fifo) */
++#  define LINUX_S_IFCHR       0020000   /* [XSI] character special */
++#  define LINUX_S_IFDIR       0040000   /* [XSI] directory */
++#  define LINUX_S_IFBLK       0060000   /* [XSI] block special */
++#  define LINUX_S_IFREG       0100000   /* [XSI] regular */
++#  define LINUX_S_IFLNK       0120000   /* [XSI] symbolic link */
++#  define LINUX_S_IFSOCK      0140000   /* [XSI] socket */
++
++#  define ZOS_S_IFIFO       0x04000000  /* named pipe (fifo) */
++#  define ZOS_S_IFCHR       0x02000000  /* character special */
++#  define ZOS_S_IFDIR       0x01000000  /* directory */
++#  define ZOS_S_IFBLK       0x06000000  /* block special */
++#  define ZOS_S_IFREG       0x03000000  /* regular */
++#  define ZOS_S_IFLNK       0x05000000  /* symbolic link */
++#  define ZOS_S_IFSOCK      0x07000000  /* socket */
++
++#  define ZOS_S_IFMT        0xFF000000  /* mask */
++
++
++/*
++ *  *  * z/OS has a 'mode_t' that is 32 bits in size, whereas
++ *   *   * Linux has a 'mode_t' that is 16 bits in size.
++ *    *    * The bottom 3 nibbles are the same, but z/OS uses
++ *     *     * the top word for the st_mode parts of mode and
++ *      *      * Linux uses the top nibble
++ *       *       */
++static inline mode_t
++to_linux_mode(unsigned int inmode)
++{
++	mode_t outmode = (mode_t) (inmode & 0777);
++
++	if ((inmode & ZOS_S_IFMT) == ZOS_S_IFIFO) { outmode |= LINUX_S_IFIFO; }
++	if ((inmode & ZOS_S_IFMT) == ZOS_S_IFCHR) { outmode |= LINUX_S_IFCHR; }
++	if ((inmode & ZOS_S_IFMT) == ZOS_S_IFDIR) { outmode |= LINUX_S_IFDIR; }
++	if ((inmode & ZOS_S_IFMT) == ZOS_S_IFBLK) { outmode |= LINUX_S_IFBLK; }
++	if ((inmode & ZOS_S_IFMT) == ZOS_S_IFREG) { outmode |= LINUX_S_IFREG; }
++	if ((inmode & ZOS_S_IFMT) == ZOS_S_IFLNK) { outmode |= LINUX_S_IFLNK; }
++	if ((inmode & ZOS_S_IFMT) == ZOS_S_IFSOCK) { outmode |= LINUX_S_IFSOCK; }
++	return outmode;
++}
++
++static inline unsigned int
++to_zos_mode(mode_t inmode)
++{
++	unsigned int outmode = (unsigned int) (inmode & 0777);
++
++        if (inmode & LINUX_S_IFIFO) { outmode |= ZOS_S_IFIFO; }
++        if (inmode & LINUX_S_IFCHR) { outmode |= ZOS_S_IFCHR; }
++        if (inmode & LINUX_S_IFDIR) { outmode |= ZOS_S_IFDIR; }
++        if (inmode & LINUX_S_IFBLK) { outmode |= ZOS_S_IFBLK; }
++        if (inmode & LINUX_S_IFREG) { outmode |= ZOS_S_IFREG; }
++        if (inmode & LINUX_S_IFLNK) { outmode |= ZOS_S_IFLNK; }
++        if (inmode & LINUX_S_IFSOCK) { outmode |= ZOS_S_IFSOCK; }
++
++        return outmode;
++}
++#  define CP_IFMT   ZOS_S_IFMT
++#  define CP_IFREG  ZOS_S_IFREG
++#  define CP_IFDIR  ZOS_S_IFDIR
++#  define CP_IFCHR  ZOS_S_IFCHR
++#  define CP_IFBLK  ZOS_S_IFBLK
++#  define CP_IFLNK  ZOS_S_IFLNK
++#  define CP_IFSOCK ZOS_S_IFSOCK
++#  define CP_IFIFO  ZOS_S_IFIFO 
++#define CP_IFNWK 0
++#endif
+ 
+ #ifndef S_ISLNK
+ # define lstat stat
