@@ -1,5 +1,5 @@
 diff --git a/src/util.c b/src/util.c
-index 4a9e501..9480771 100644
+index 4a9e501..ae2b3fd 100644
 --- a/src/util.c
 +++ b/src/util.c
 @@ -601,7 +601,6 @@ create_all_directories (char const *name)
@@ -10,12 +10,15 @@ index 4a9e501..9480771 100644
    if (dir == NULL)
      error (PAXEXIT_FAILURE, 0, _("virtual memory exhausted"));
  
-@@ -1158,7 +1157,7 @@ cpio_to_stat (struct stat *st, struct cpio_file_stat *hdr)
+@@ -1158,7 +1157,11 @@ cpio_to_stat (struct stat *st, struct cpio_file_stat *hdr)
    memset (st, 0, sizeof (*st));
    st->st_dev = makedev (hdr->c_dev_maj, hdr->c_dev_min);
    st->st_ino = hdr->c_ino;
--  st->st_mode = hdr->c_mode & 0777;
++#ifdef __MVS__
 +  st->st_mode = hdr->c_mode & 07777;
++#else
+   st->st_mode = hdr->c_mode & 0777;
++#endif
    if (hdr->c_mode & CP_IFREG)
      st->st_mode |= S_IFREG;
    else if (hdr->c_mode & CP_IFDIR)
