@@ -1,0 +1,32 @@
+diff --git a/src/copyout.c b/src/copyout.c
+index 582e696..0a3a30b 100644
+--- a/src/copyout.c
++++ b/src/copyout.c
+@@ -323,7 +323,26 @@ to_ascii_or_error (char *where, uintmax_t n, size_t digits,
+   return 0;
+ }
+ 
+-
++int
++to_ascii_or_base256 (char *where, uintmax_t n, size_t digits,
++		                     unsigned logbase,
++				                          const char *filename, const char *fieldname)
++{
++  if (to_ascii(where, n, digits, logbase, false))
++  {
++     /* If it didn’t fit in octal, use GNU base-256 */
++     memset(where, 0, digits);
++     where[0] = 0x80;
++     for (size_t i = 0; i < digits; i++)
++     {
++         where[digits - 1 - i] = (unsigned char)(n & 0xff);
++         n >>= 8;
++     }
++     return 1; /* base-256 used */
++  }
++  return 0; /* octal used */
++}
++
+ int
+ write_out_new_ascii_header (const char *magic_string,
+ 			    struct cpio_file_stat *file_hdr, int out_des)

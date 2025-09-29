@@ -1,0 +1,151 @@
+diff --git a/src/tar.c b/src/tar.c
+index 318cbbe..e16297e 100644
+--- a/src/tar.c
++++ b/src/tar.c
+@@ -126,6 +126,61 @@ tar_checksum (struct tar_header *tar_hdr)
+     }							    \
+   while (0)
+ 
++/* Encode NUMBER into BUF of length LEN.
++ *    Octal if it fits, otherwise base-256 (with high-bit set). */
++			    static void
++			    to_tar_number (uintmax_t number, char *buf, size_t len)
++{
++	  uintmax_t max_oct = (1ULL << (3 * (len - 1))) - 1; /* max octal that fits */
++	    if (number <= max_oct)
++		        {
++				      /* Octal, NUL-terminated, padded with leading zeros. */
++				      snprintf (buf, len, "%0*jo", (int)(len - 1), (uintmax_t) number);
++				            buf[len - 1] = '\0';
++					        }
++	      else
++		          {
++				        /* Base-256, binary big-endian, high bit set. */
++				        memset (buf, 0, len);
++					      for (size_t i = 0; i < len; i++)
++						              {
++								                buf[len - 1 - i] = (unsigned char)(number & 0xFF);
++										          number >>= 8;
++											          }
++					            buf[0] |= 0x80; /* set high bit */
++						        }
++}
++
++/* Parse a tar numeric field (ustar, posix tar).
++ *    Supports both traditional octal and GNU base-256 encoding. */
++static uintmax_t
++from_tar_number (const char *field, size_t len)
++{
++	    /* If high bit of first byte is set, this is base-256. */
++	    if ((field[0] & 0x80) != 0) {
++		            /* Clear high bit for 2's complement interpretation. */
++		            unsigned char buf[32];  /* should be plenty, len is usually <= 12 */
++			            if (len > sizeof(buf))
++					                len = sizeof(buf);
++				            memcpy(buf, field, len);
++
++					            buf[0] &= 0x7f;  /* clear high bit */
++						            uintmax_t val = 0;
++							            for (size_t i = 0; i < len; i++) {
++									                val = (val << 8) | buf[i];
++											        }
++								            return val;
++									        }
++
++	        /* Otherwise: treat as ASCII octal. */
++	        uintmax_t val = 0;
++		    for (size_t i = 0; i < len && field[i]; i++) {
++			            if (field[i] < '0' || field[i] > '7')
++					                break;
++				            val = (val << 3) + (field[i] - '0');
++					        }
++		        return val;
++}
+ /* Write out header FILE_HDR, including the file name, to file
+    descriptor OUT_DES.  */
+ 
+@@ -159,10 +214,17 @@ write_out_tar_header (struct cpio_file_stat *file_hdr, int out_des)
+   /* Ustar standard (POSIX.1-1988) requires the mode to contain only 3 octal
+      digits */
+   TO_OCT (file_hdr, c_mode & MODE_ALL, 8, tar_hdr, mode);
+-  TO_OCT (file_hdr, c_uid, 8, tar_hdr, uid);
+-  TO_OCT (file_hdr, c_gid, 8, tar_hdr, gid);
+-  TO_OCT (file_hdr, c_filesize, 12, tar_hdr, size);
+-  TO_OCT (file_hdr, c_mtime, 12, tar_hdr, mtime);
++  //TO_OCT (file_hdr, c_uid, 8, tar_hdr, uid);
++  //TO_OCT (file_hdr, c_gid, 8, tar_hdr, gid);
++  
++  to_tar_number (file_hdr->c_uid, tar_hdr->uid, sizeof tar_hdr->uid);
++  to_tar_number (file_hdr->c_gid, tar_hdr->gid, sizeof tar_hdr->gid);
++
++//  TO_OCT (file_hdr, c_filesize, 12, tar_hdr, size);
++ // TO_OCT (file_hdr, c_mtime, 12, tar_hdr, mtime);
++  to_tar_number(file_hdr->c_filesize, tar_hdr->size, sizeof tar_hdr->size);
++ to_tar_number(file_hdr->c_mtime, tar_hdr->mtime, sizeof tar_hdr->mtime);
++
+ 
+   switch (file_hdr->c_mode & CP_IFMT)
+     {
+@@ -219,9 +281,12 @@ write_out_tar_header (struct cpio_file_stat *file_hdr, int out_des)
+       if (name)
+ 	strcpy (tar_hdr->gname, name);
+ 
+-      TO_OCT (file_hdr, c_rdev_maj, 8, tar_hdr, devmajor);
+-      TO_OCT (file_hdr, c_rdev_min, 8, tar_hdr, devminor);
++      //TO_OCT (file_hdr, c_rdev_maj, 8, tar_hdr, devmajor);
++      //TO_OCT (file_hdr, c_rdev_min, 8, tar_hdr, devminor);
++      to_tar_number(file_hdr->c_rdev_maj, tar_hdr->devmajor, sizeof tar_hdr->devmajor);
++     to_tar_number(file_hdr->c_rdev_min, tar_hdr->devminor, sizeof tar_hdr->devminor); 
+     }
++  unsigned int sum = tar_checksum(tar_hdr);
+ 
+   to_ascii (tar_hdr->chksum, tar_checksum (tar_hdr), 8, LG_8, true);
+ 
+@@ -286,6 +351,9 @@ read_in_tar_header (struct cpio_file_stat *file_hdr, int in_des)
+ 
+   while (1)
+     {
++	    unsigned int expected = tar_checksum(tar_hdr);
++	    unsigned int stored   = FROM_OCTAL(tar_hdr->chksum);
++
+       file_hdr->c_chksum = FROM_OCTAL (tar_hdr->chksum);
+ 
+       if (file_hdr->c_chksum != tar_checksum (tar_hdr))
+@@ -323,19 +391,31 @@ read_in_tar_header (struct cpio_file_stat *file_hdr, int in_des)
+      names in /etc/passwd and /etc/groups.  (98/10/15) -BEM */
+       if (archive_format == arf_ustar && !numeric_uid
+ 	  && (uidp = getuidbyname (tar_hdr->uname)))
++      {
+ 	file_hdr->c_uid = *uidp;
++      }
+       else
+-	file_hdr->c_uid = FROM_OCTAL (tar_hdr->uid);
++      {
++	file_hdr->c_uid = from_tar_number (tar_hdr->uid, sizeof tar_hdr->uid);
++      }
+ 
+       if (archive_format == arf_ustar && !numeric_uid
+ 	  && (gidp = getgidbyname (tar_hdr->gname)))
+ 	file_hdr->c_gid = *gidp;
+       else
+-	file_hdr->c_gid = FROM_OCTAL (tar_hdr->gid);
+-      file_hdr->c_filesize = FROM_OCTAL (tar_hdr->size);
+-      file_hdr->c_mtime = FROM_OCTAL (tar_hdr->mtime);
+-      file_hdr->c_rdev_maj = FROM_OCTAL (tar_hdr->devmajor);
+-      file_hdr->c_rdev_min = FROM_OCTAL (tar_hdr->devminor);
++      {
++//	file_hdr->c_gid = FROM_OCTAL (tar_hdr->gid);
++	file_hdr->c_gid = from_tar_number (tar_hdr->gid, sizeof tar_hdr->gid);
++      }
++//	file_hdr->c_filesize = FROM_OCTAL (tar_hdr->size);
++//      file_hdr->c_mtime = FROM_OCTAL (tar_hdr->mtime);
++	file_hdr->c_filesize = from_tar_number (tar_hdr->size, sizeof tar_hdr->size);
++	file_hdr->c_mtime    = from_tar_number (tar_hdr->mtime, sizeof tar_hdr->mtime);
++     // file_hdr->c_rdev_maj = FROM_OCTAL (tar_hdr->devmajor);
++      //file_hdr->c_rdev_min = FROM_OCTAL (tar_hdr->devminor);
++      file_hdr->c_rdev_maj = from_tar_number(tar_hdr->devmajor, sizeof(tar_hdr->devmajor));
++     file_hdr->c_rdev_min = from_tar_number(tar_hdr->devminor, sizeof(tar_hdr->devminor));
++
+       file_hdr->c_tar_linkname = NULL;
+ 
+       switch (tar_hdr->typeflag)
